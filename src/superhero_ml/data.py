@@ -37,6 +37,7 @@ def audit_frame(frame: pd.DataFrame, file_name: str) -> dict[str, Any]:
         "columns": len(frame.columns),
         "column_names": json.dumps(list(frame.columns)),
         "dtypes": json.dumps({column: str(dtype) for column, dtype in frame.dtypes.items()}),
+        "missing_by_column": json.dumps({column: int(count) for column, count in frame.isna().sum().items()}),
         "duplicate_names": int(frame[NAME_COLUMN].duplicated(keep=False).sum()),
         "alignment_good": int(frame[TARGET].eq("Good").sum()),
         "alignment_bad": int(frame[TARGET].eq("Bad").sum()),
