@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from functools import cmp_to_key
 from pathlib import Path
 
 import matplotlib
@@ -83,16 +84,20 @@ def _clustering_tables(bundle: DatasetBundle, result: dict, output_dir: Path) ->
     k_profile = result["kmeans_profiles"].assign(algorithm="K-Means")
     a_profile = result["agglomerative_profiles"].assign(algorithm="Agglomerative")
     profiles_table = pd.concat([k_profile, a_profile], ignore_index=True)
+    names = {}
+    for profile in (k_profile, a_profile):
+        names.update({int(row.cluster): row.Name for row in profile.itertuples()})
 
     alignment_rows = []
     for algorithm, labels in (("K-Means", result["kmeans_labels"]), ("Agglomerative", result["agglomerative_labels"])):
         frame = bundle.train_clean_a[["alignment"]].copy()
         frame["cluster"] = labels
+        frame["cluster_name"] = frame["cluster"].map(names)
         frame["alignment"] = frame["alignment"].fillna("").replace("", "Blank")
-        counts = frame.groupby(["cluster", "alignment"]).size().unstack(fill_value=0)
-        for cluster, row in counts.iterrows():
+        counts = frame.groupby(["cluster", "cluster_name", "alignment"]).size().unstack(fill_value=0)
+        for (cluster, cluster_name), row in counts.iterrows():
             total = row.sum()
-            alignment_rows.append({"algorithm": algorithm, "cluster": int(cluster), **{label: float(100 * row.get(label, 0) / total) for label in ["Good", "Bad", "Neutral", "Blank"]}})
+            alignment_rows.append({"algorithm": algorithm, "cluster": int(cluster), "Name": cluster_name, **{label: float(100 * row.get(label, 0) / total) for label in ["Good", "Bad", "Neutral", "Blank"]}})
     alignment_mix = pd.DataFrame(alignment_rows)
     _save_table(metrics, output_dir, "T6_clustering_metrics")
     _save_table(profiles_table, output_dir, "T7_cluster_profiles")
@@ -122,10 +127,24 @@ def _network_tables(neural: dict, output_dir: Path) -> dict[str, pd.DataFrame]:
     results = []
     for name in ["Network A", "Network B"]:
         record = neural["networks"][name]
-        settings.append({"network": name, "parameters": record["parameters"], "hidden_layers": "8" if name == "Network A" else "16, 8", "best_epoch": record["best_epoch"], "optimizer": "Adam", "learning_rate": 0.001, "batch_size": 32, "max_epochs": 200, "patience": 15, "threshold": 0.5})
+        settings.append({"network": name, "parameters": record["parameters"], "architecture": "6 → 8 ReLU → 1 sigmoid" if name == "Network A" else "6 → 16 ReLU → 8 ReLU → 1 sigmoid", "hidden_layers": "8" if name == "Network A" else "16, 8", "best_epoch": record["best_epoch"], "optimizer": "Adam", "learning_rate": 0.001, "batch_size": 32, "max_epochs": 200, "patience": 15, "threshold": 0.5})
         for split in ["train", "validation", "test"]:
             metrics = record["metrics"][split]
-            results.append({"network": name, "split": split, "accuracy": metrics["accuracy"], "macro_f1": metrics["macro_f1"], "log_loss": metrics.get("log_loss")})
+            results.append({
+                "network": name,
+                "split": split,
+                "accuracy": metrics["accuracy"],
+                "macro_precision": metrics["macro_precision"],
+                "macro_recall": metrics["macro_recall"],
+                "macro_f1": metrics["macro_f1"],
+                "hero_precision": metrics["hero_precision"],
+                "hero_recall": metrics["hero_recall"],
+                "hero_f1": metrics["hero_f1"],
+                "villain_precision": metrics["villain_precision"],
+                "villain_recall": metrics["villain_recall"],
+                "villain_f1": metrics["villain_f1"],
+                "log_loss": metrics.get("log_loss"),
+            })
     t9 = pd.DataFrame(settings)
     t10 = pd.DataFrame(results)
     final_rows = []
@@ -137,9 +156,77 @@ def _network_tables(neural: dict, output_dir: Path) -> dict[str, pd.DataFrame]:
     return {"T9": t9, "T10": t10, "network_final": pd.DataFrame(final_rows)}
 
 
+def _compare_ranked_rows(left: dict, right: dict) -> int:
+    """Compare two models using the assignment's strict macro-F1 tie rule."""
+    left_f1 = float(left["test_macro_f1"])
+    right_f1 = float(right["test_macro_f1"])
+    if abs(left_f1 - right_f1) < 0.01:
+        left_recall = float(left["villain_recall"])
+        right_recall = float(right["villain_recall"])
+        if left_recall != right_recall:
+            return -1 if left_recall > right_recall else 1
+    if left_f1 != right_f1:
+        return -1 if left_f1 > right_f1 else 1
+    return -1 if str(left["model"]) < str(right["model"]) else 1 if str(left["model"]) > str(right["model"]) else 0
+
+
+def _rank_final_table(frame: pd.DataFrame) -> pd.DataFrame:
+    ranked = pd.DataFrame(sorted(frame.to_dict("records"), key=cmp_to_key(_compare_ranked_rows)))
+    ranked.insert(0, "rank", np.arange(1, len(ranked) + 1))
+    ranked["ranking_rule"] = "Test macro-F1; Villain recall when macro-F1 gap < 0.01"
+    return ranked
+
+
+def _artifact_captions() -> dict[str, str]:
+    return {
+        "G1": "Good and Bad counts in the cleaned classification sets. Percent labels make class imbalance visible in both supplied files.",
+        "G2": "Decision Tree test confusion matrix. Rows are actual classes and columns are predicted classes, with Hero before Villain.",
+        "G3": "KNN test confusion matrix. This view makes the minority-class prediction pattern directly auditable.",
+        "G4": "Classification comparison on the frozen test set. Macro-averaged metrics are used because the assignment evaluates both classes equally.",
+        "G5": "K-Means elbow curve for k=2 through k=8. The curve is diagnostic; the final k is selected by the required silhouette rule.",
+        "G6": "Silhouette score for each candidate k. The dashed line marks the selected k, including the three-decimal tie rule.",
+        "G7": "Ward dendrogram truncated to the final 30 merges. The dashed horizontal line shows the cut corresponding to the selected k.",
+        "G8": "K-Means projection onto the single PCA fit used for visualization. Cluster colours and names are consistent with T7 and T8.",
+        "G9": "Agglomerative projection onto the same PCA coordinates as G8. This preserves a fair visual comparison between algorithms.",
+        "G10": "K-Means cluster profiles on the original 0–100 score scale. The descriptive names identify ability profiles, not alignment classes.",
+        "G11": "Agglomerative cluster profiles on the original 0–100 score scale. The same cluster naming and colour convention is used as in the other cluster artifacts.",
+        "G12": "Network A and B architectures with input features, hidden activations, sigmoid output meaning, connections, and exact trainable parameter counts.",
+        "G13": "Network A training and validation binary cross-entropy. The dashed line marks the epoch whose validation loss was restored.",
+        "G14": "Network B training and validation binary cross-entropy. Divergence after the selected epoch is evidence considered in the overfitting discussion.",
+        "G15": "Network A and B test confusion matrices. Counts use the required actual-row/predicted-column class order.",
+        "G16": "Final comparison of all five models on test accuracy and test macro-F1. T11 supplies the complete ranking and tie-break evidence.",
+        "T1": "Raw-file audit covering shapes, columns, dtypes, missingness, blanks, zeros, duplicates, and alignment counts before cleaning.",
+        "T2": "Row-count audit showing the effect of within-file duplicates, cross-file overlap removal, weak-row removal, and the two clean sets.",
+        "T3": "Clean Set B Good/Bad counts and percentages used by the classification task.",
+        "T4": "Best Decision Tree and KNN settings selected by five-fold stratified macro-F1 grid search.",
+        "T5": "Baseline, Decision Tree, and KNN train/test metrics, including class-specific test metrics and log loss where available.",
+        "T6": "K-Means and Agglomerative clustering metrics at the selected k, including the required ARI comparison.",
+        "T7": "Original-scale cluster profiles, sizes, averages, and descriptive ability-profile names for both algorithms.",
+        "T8": "Good, Bad, Neutral, and blank alignment percentages shown only after unsupervised clustering, for interpretation rather than fitting.",
+        "T9": "Neural-network architectures, parameter counts, optimizer settings, stopping settings, and best validation-loss epochs.",
+        "T10": "Network train, validation, and test results, including accuracy, macro metrics, per-class precision/recall/F1, and log loss.",
+        "T11": "Final ranking of Baseline, Decision Tree, KNN, Network A, and Network B using test macro-F1 with the specified Villain-recall tie-break.",
+    }
+
+
+def _write_artifact_guide(output_dir: Path) -> dict[str, str]:
+    captions = _artifact_captions()
+    lines = ["# Artifact guide", "", "Each required artifact has a numbered title and a short interpretation note.", ""]
+    for prefix in ("G", "T"):
+        lines.append(f"## {'Graphs' if prefix == 'G' else 'Tables'}")
+        lines.append("")
+        for number in range(1, 17 if prefix == "G" else 12):
+            key = f"{prefix}{number}"
+            lines.append(f"### {key}")
+            lines.append(captions[key])
+            lines.append("")
+    (output_dir / "artifact_guide.md").write_text("\n".join(lines), encoding="utf-8")
+    return captions
+
+
 def _write_report(output_dir: Path, classification: dict, clustering: dict, neural: dict, t11: pd.DataFrame) -> None:
     class_test = {name: values["test"] for name, values in classification["evaluations"].items()}
-    winner = t11.sort_values(["test_macro_f1", "villain_recall"], ascending=[False, False]).iloc[0]
+    winner = t11.iloc[0]
     dt_gap = classification["evaluations"]["Decision Tree"]["train"]["macro_f1"] - class_test["Decision Tree"]["macro_f1"]
     knn_gap = classification["evaluations"]["KNN"]["train"]["macro_f1"] - class_test["KNN"]["macro_f1"]
     network_gap = neural["networks"]["Network B"]["metrics"]["train"]["macro_f1"] - neural["networks"]["Network B"]["metrics"]["test"]["macro_f1"]
@@ -168,7 +255,7 @@ def _write_report(output_dir: Path, classification: dict, clustering: dict, neur
     report += f"- **Q11:** Network A ({a_f1:.3f}) and Network B ({b_f1:.3f}) both beat the Decision Tree ({dt_f1:.3f}) on test macro-F1, but neither beats KNN ({knn_f1:.3f}).\n"
     report += f"- **Q12:** Limitations include the six-feature restriction and the different training populations: tree/KNN use all training rows while networks use an 80/20 fit/validation split. Network B train–test gap={network_gap:.3f}.\n\n"
     report += "## Required artifacts\n\n"
-    report += "All generated G1–G16 figures and T1–T11 tables are stored in this output directory.\n"
+    report += "All generated G1–G16 figures and T1–T11 tables are stored in this output directory. Each artifact has a title and interpretation note in `artifact_guide.md`. T10 includes per-class precision, recall, and F1 for every network split.\n"
     (output_dir / "report.md").write_text(report, encoding="utf-8")
 
 
@@ -219,13 +306,20 @@ def run_assignment(data_dir: str | Path = ROOT / "data", output_dir: str | Path 
     final_table = pd.DataFrame(final_rows)
     baseline_f1 = float(final_table.loc[final_table["model"] == "Baseline", "test_macro_f1"].iloc[0])
     final_table["beats_baseline"] = np.where(final_table["test_macro_f1"] > baseline_f1, "yes", "no")
-    final_table = final_table.sort_values(["test_macro_f1", "villain_recall"], ascending=[False, False]).reset_index(drop=True)
-    final_table.insert(0, "rank", np.arange(1, len(final_table) + 1))
+    final_table = _rank_final_table(final_table)
     _save_table(final_table, output_dir, "T11_final_ranking")
     figures.append(final_comparison(final_table, output_dir / "G16_final_comparison.png"))
 
+    artifact_captions = _write_artifact_guide(output_dir)
     artifacts = [str(path) for path in output_dir.iterdir() if path.is_file()]
-    checks = validate_run(classification, clustering, neural, artifacts)
+    checks = validate_run(
+        classification,
+        clustering,
+        neural,
+        artifacts,
+        artifact_captions=artifact_captions,
+        generated_tables={"T1": bundle.audit, "T2": bundle.row_counts, **class_tables, **cluster_tables, **network_tables, "T11": final_table},
+    )
     (output_dir / "validation.json").write_text(json.dumps(checks, indent=2), encoding="utf-8")
     _write_report(output_dir, classification, clustering, neural, final_table)
     return {"figures": figures, "tables": artifacts, "validation": checks, "final_ranking": final_table}
@@ -233,3 +327,4 @@ def run_assignment(data_dir: str | Path = ROOT / "data", output_dir: str | Path 
 
 if __name__ == "__main__":
     run_assignment()
+
