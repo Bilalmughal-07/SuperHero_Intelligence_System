@@ -1,0 +1,5 @@
+file,class,count,percent
+train.csv,Good,588,64.19213973799127
+train.csv,Bad,328,35.80786026200873
+test.csv,Good,137,60.888888888888886
+test.csv,Bad,88,39.111111111111114
