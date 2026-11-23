@@ -1,0 +1,7 @@
+stage,train.csv,test.csv
+Loaded,1158,290.0
+After step 2 duplicates,1158,290.0
+After cross-file duplicate rule,1158,290.0
+After step 4 weak rows,1072,270.0
+Clean Set A,1072,
+Clean Set B,916,225.0

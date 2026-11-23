@@ -1,0 +1,16 @@
+{
+  "seed": true,
+  "feature_contract": {
+    "exact_six_features": true,
+    "prohibited_features_absent": true,
+    "feature_count": 6
+  },
+  "decision_tree_grid_size": true,
+  "knn_grid_size": true,
+  "clustering_k_values": true,
+  "selected_k_in_range": true,
+  "network_a_parameters": true,
+  "network_b_parameters": true,
+  "all_graphs_and_tables_generated": true,
+  "all_passed": true
+}

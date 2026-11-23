@@ -149,20 +149,23 @@ def _write_report(output_dir: Path, classification: dict, clustering: dict, neur
     report += f"The current test-set winner is **{winner['model']}** with macro-F1 **{winner['test_macro_f1']:.3f}** and Villain recall **{winner['villain_recall']:.3f}**.\n\n"
     report += "## Classification answers\n\n"
     report += f"- **Q1:** Winner by the required rule: {winner['model']} ({winner['test_macro_f1']:.3f} test macro-F1).\n"
-    report += f"- **Q2:** Baseline comparison is shown in T5; each model with a higher test macro-F1 beats the baseline.\n"
-    report += f"- **Q3:** Inspect G2 and G3 together with Hero/Villain recall in T5; the lower-recall class is harder to predict.\n"
-    report += f"- **Q4:** Decision Tree train–test macro-F1 gap={dt_gap:.3f}; KNN gap={knn_gap:.3f}. The 0.10 threshold is the assignment rule.\n\n"
+    baseline_f1 = class_test["Baseline"]["macro_f1"]
+    dt_f1 = class_test["Decision Tree"]["macro_f1"]
+    knn_f1 = class_test["KNN"]["macro_f1"]
+    report += f"- **Q2:** Baseline test macro-F1={baseline_f1:.3f}; Decision Tree={dt_f1:.3f} ({dt_f1 - baseline_f1:+.3f}); KNN={knn_f1:.3f} ({knn_f1 - baseline_f1:+.3f}). Both models beat the baseline.\n"
+    report += f"- **Q3:** Villain is harder to predict: KNN Villain recall={class_test['KNN']['villain_recall']:.3f} versus Hero recall={class_test['KNN']['hero_recall']:.3f}; the same pattern appears for the Decision Tree.\n"
+    report += f"- **Q4:** Decision Tree train–test macro-F1 gap={dt_gap:.3f}; KNN gap={knn_gap:.3f}. Both exceed the assignment's >0.10 overfitting threshold.\n\n"
     report += "## Clustering answers\n\n"
     report += f"- **Q5:** Selected k={clustering['k']} by the highest silhouette score; G5 provides the elbow discussion.\n"
-    report += f"- **Q6:** K-Means and Agglomerative ARI={clustering['ari']:.3f}; use T7 profiles for interpretation.\n"
-    report += "- **Q7:** Separation is decided by the three metric wins in T6; interpretability is decided from G10/G11.\n"
-    report += "- **Q8:** Cluster descriptions are based on the original-scale averages in T7 and the alignment mix in T8.\n\n"
+    report += f"- **Q6:** K-Means and Agglomerative have ARI={clustering['ari']:.3f}, which is moderate agreement under the assignment bands. Their profiles are similar in broad shape but not identical.\n"
+    report += "- **Q7:** K-Means is better separated because it wins all three T6 separation metrics. It is also easier to interpret here because its two profiles form a clearer low-versus-high ability contrast.\n"
+    report += "- **Q8:** K-Means Cluster 1 is lower in strength, speed, durability, power, and combat while remaining high in intelligence; Cluster 2 is high across the ability scores. Neither cluster is mostly villains: both contain more Good than Bad characters.\n\n"
     report += "## Neural-network answers\n\n"
     a_f1 = neural['networks']['Network A']['metrics']['test']['macro_f1']
     b_f1 = neural['networks']['Network B']['metrics']['test']['macro_f1']
     report += f"- **Q9:** Network B test macro-F1={b_f1:.3f}; Network A={a_f1:.3f}; improvement={b_f1 - a_f1:.3f}.\n"
-    report += "- **Q10:** G13 and G14 show validation-loss behavior; best epochs are reported in T9.\n"
-    report += "- **Q11:** Compare the network rows against Decision Tree and KNN in T11.\n"
+    report += f"- **Q10:** Network A reaches its best validation loss at epoch {neural['networks']['Network A']['best_epoch']} without a strong late validation-loss reversal. Network B is best at epoch {neural['networks']['Network B']['best_epoch']} and then shows validation loss rising while training loss continues to fall, indicating overfitting.\n"
+    report += f"- **Q11:** Network A ({a_f1:.3f}) and Network B ({b_f1:.3f}) both beat the Decision Tree ({dt_f1:.3f}) on test macro-F1, but neither beats KNN ({knn_f1:.3f}).\n"
     report += f"- **Q12:** Limitations include the six-feature restriction and the different training populations: tree/KNN use all training rows while networks use an 80/20 fit/validation split. Network B train–test gap={network_gap:.3f}.\n\n"
     report += "## Required artifacts\n\n"
     report += "All generated G1–G16 figures and T1–T11 tables are stored in this output directory.\n"
@@ -230,4 +233,3 @@ def run_assignment(data_dir: str | Path = ROOT / "data", output_dir: str | Path 
 
 if __name__ == "__main__":
     run_assignment()
-
