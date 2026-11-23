@@ -42,4 +42,6 @@ def test_classification_and_clustering_smoke(tmp_path):
     assert set(classification["evaluations"]) == {"Baseline", "Decision Tree", "KNN"}
     assert clustering["sweep"]["k"].tolist() == list(range(2, 9))
     assert clustering["k"] in range(2, 9)
+    assert "Name" in clustering["kmeans_profiles"].columns
+    assert "Name" in clustering["agglomerative_profiles"].columns
 
