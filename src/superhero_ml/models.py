@@ -120,7 +120,17 @@ def _renumber_clusters(labels: np.ndarray, original_scores: pd.DataFrame) -> tup
     profile.columns = [column for column, _ in profile.columns]
     profile.insert(0, "size", pd.Series(renamed).value_counts().sort_index())
     profile["average_score"] = profile[FEATURES].mean(axis=1)
-    return renamed, mapping, profile.reset_index()
+    profile = profile.reset_index()
+    ordered_clusters = profile.sort_values("average_score")["cluster"].tolist()
+    name_by_cluster = {}
+    if len(ordered_clusters) == 2:
+        names = ["Lower overall ability profile", "Higher overall ability profile"]
+    else:
+        names = [f"Ability profile {rank} of {len(ordered_clusters)}" for rank in range(1, len(ordered_clusters) + 1)]
+    for cluster, name in zip(ordered_clusters, names):
+        name_by_cluster[int(cluster)] = name
+    profile.insert(1, "Name", profile["cluster"].map(name_by_cluster))
+    return renamed, mapping, profile
 
 
 def run_clustering(bundle: DatasetBundle) -> dict[str, Any]:
