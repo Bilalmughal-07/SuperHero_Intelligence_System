@@ -241,7 +241,9 @@ def _write_report(output_dir: Path, classification: dict, clustering: dict, neur
     knn_f1 = class_test["KNN"]["macro_f1"]
     report += f"- **Q2:** Baseline test macro-F1={baseline_f1:.3f}; Decision Tree={dt_f1:.3f} ({dt_f1 - baseline_f1:+.3f}); KNN={knn_f1:.3f} ({knn_f1 - baseline_f1:+.3f}). Both models beat the baseline.\n"
     report += f"- **Q3:** Villain is harder to predict: KNN Villain recall={class_test['KNN']['villain_recall']:.3f} versus Hero recall={class_test['KNN']['hero_recall']:.3f}; the same pattern appears for the Decision Tree.\n"
-    report += f"- **Q4:** Decision Tree train–test macro-F1 gap={dt_gap:.3f}; KNN gap={knn_gap:.3f}. Both exceed the assignment's >0.10 overfitting threshold.\n\n"
+    dt_flag = "above" if dt_gap > 0.10 else "not above"
+    knn_flag = "above" if knn_gap > 0.10 else "not above"
+    report += f"- **Q4:** Decision Tree train–test macro-F1 gap={dt_gap:.4f} ({dt_flag} 0.10); KNN gap={knn_gap:.4f} ({knn_flag} 0.10). This applies the assignment's strict >0.10 overfitting threshold.\n\n"
     report += "## Clustering answers\n\n"
     report += f"- **Q5:** Selected k={clustering['k']} by the highest silhouette score; G5 provides the elbow discussion.\n"
     report += f"- **Q6:** K-Means and Agglomerative have ARI={clustering['ari']:.3f}, which is moderate agreement under the assignment bands. Their profiles are similar in broad shape but not identical.\n"
